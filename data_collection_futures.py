@@ -9,11 +9,15 @@ import websockets
 from kucoin_futures.client import WsToken
 import time
 import pytz
+from influxdb import InfluxDBClient
+import numpy as np
 
 # Ensure the directory exists
 os.makedirs('./data', exist_ok=True)
 
-exchange_id = 'kucoin'  # Using KuCoin exchange
+
+
+exchange_id = 'huobi'  # Using KuCoin exchange
 exchange_class = getattr(ccxt, exchange_id)
 exchange = exchange_class()
 
@@ -29,6 +33,55 @@ recent_klines = {}
 window_width = 14
 
 log_lines = []
+    
+influx_client = InfluxDBClient(host='localhost', port=8086, database="ohlc")
+
+def write_to_influx(symbol, df):
+    influx_points = []
+
+    
+    for index, row in df.iterrows():
+        
+        print(row)
+        point = {
+            "measurement": symbol,
+            "time": index.isoformat(),
+            "fields": {
+                "open": row['open'],
+                "high": row['high'],
+                "low": row['low'],
+                "close": row['close'],
+                "volume": row['volume'],
+                "SMA": row['SMA'] if not np.isnan(row['SMA']) else None,
+                "RSI": row['RSI'] if not np.isnan(row['RSI']) else None,
+                "MACD": row['MACD'] if not np.isnan(row['MACD']) else None,
+                "MACD_signal": row['MACD_signal'] if not np.isnan(row['MACD_signal']) else None,
+                "MACD_diff": row['MACD_diff'] if not np.isnan(row['MACD_diff']) else None,
+                "double_top": row['double_top'],
+                "double_bottom": row['double_bottom'],
+                "flag": row['flag'],
+                "head_and_shoulders": row['head_and_shoulders'],
+                "inverse_head_and_shoulders": row['inverse_head_and_shoulders'],
+                "ascending_triangle": row['ascending_triangle'],
+                "descending_triangle": row['descending_triangle'],
+                "rising_wedge": row['rising_wedge'],
+                "falling_wedge": row['falling_wedge'],
+                "triple_top": row['triple_top'],
+                "triple_bottom": row['triple_bottom'],
+                "cup_and_handle": row['cup_and_handle'],
+                "pennant": row['pennant'],
+                "support": row['support'] if not np.isnan(row['MACD']) else None,
+                "resistance": row['resistance'] if not np.isnan(row['MACD']) else None
+            }
+        }
+        
+        print("appending: ", point)
+        
+        influx_client.write_points([point])
+        
+        print("write complete")
+    #     influx_points.append(point)
+    # influx_client.write_points(influx_points)
 
 # Fetch historical data for initialization
 def fetch_historical_data(symbol, start_date, end_date, original_symbol):
@@ -43,6 +96,9 @@ def fetch_historical_data(symbol, start_date, end_date, original_symbol):
                 break
             since = ohlcv[-1][0] + 60000  # move to next timestamp, +1 minute
             all_data.extend(ohlcv)
+            
+            print("new ohlc : ", ohlcv)
+            
         except ccxt.BaseError as e:
             print(f"Error fetching data for {symbol} at {since}: {e}")
             log_lines.append(f"Error fetching data for {symbol} at {since}: {e}")
@@ -103,19 +159,25 @@ def fetch_historical_data(symbol, start_date, end_date, original_symbol):
         df['support'] = df['low'].rolling(window=window_width).min()
         df['resistance'] = df['high'].rolling(window=window_width).max()
 
-        data_path = f'./data/{original_symbol.lower()}_futures_ohlcv_with_indicators.csv'
-        df.to_csv(data_path)
-        print(f"Data saved to {data_path}")
-        log_lines.append(f"Data saved to {data_path}")
+        write_to_influx(original_symbol, df)
+        print(f"Data written to InfluxDB for {original_symbol}")
+        log_lines.append(f"Data written to InfluxDB for {original_symbol}")
+
+        # data_path = f'./data/{original_symbol.lower()}_futures_ohlcv_with_indicators.csv'
+        # df.to_csv(data_path)
+        # print(f"Data saved to {data_path}")
+        # log_lines.append(f"Data saved to {data_path}")
     else:
         print(f"No data collected for {symbol}")
         log_lines.append(f"No data collected for {symbol}")
+
 
 def is_new_kline(kline):
     symbol = kline['symbol']
     timestamp = int(kline['candles'][0]) * 1000
     last_timestamp = recent_klines[symbol][-1][0]
     return  last_timestamp != timestamp
+
 
 async def handle_message(msg):
     global log_lines
@@ -206,6 +268,7 @@ async def handle_message(msg):
         print(f"Error processing message: {e}")
         log_lines.append(f"Error processing message: {e}")
 
+
 async def connect_to_websocket():
     client = WsToken()
     ws_token = client.get_ws_token()
@@ -228,9 +291,9 @@ for symbol, original_symbol in zip(ccxt_symbols, original_symbols):
 
 print(recent_klines)
 
-# WebSocket setup and connection
-loop = asyncio.get_event_loop()
-loop.run_until_complete(connect_to_websocket())
+# # WebSocket setup and connection
+# loop = asyncio.get_event_loop()
+# loop.run_until_complete(connect_to_websocket())
 
 # Save log to file
 try:
