@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  influx:
+    image: influxdb:1.8.10
+    restart: always
+    volumes:
+      - .:/app
+
+  
