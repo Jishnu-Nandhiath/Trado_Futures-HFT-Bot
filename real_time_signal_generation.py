@@ -3,10 +3,17 @@ import numpy as np
 import logging
 import os
 import time
+from influxdb import InfluxDBClient
+from utils import write_to_influx_signals
+from futures_trade_backtest import initiate_trade
 
 logging.basicConfig(level=logging.DEBUG)
 
-def generate_trade_signal(df, stop_loss_factor, take_profit_factor):
+
+influx_client = InfluxDBClient(host='localhost', port=8086, database="ohlc")
+
+
+def generate_trade_signal(symbol, df, stop_loss_factor, take_profit_factor):
     buffer = 0.00005  # More sensitive buffer value for testing
     df['signal'] = 0
     df['stop_loss'] = np.nan
@@ -23,7 +30,6 @@ def generate_trade_signal(df, stop_loss_factor, take_profit_factor):
             price_change = abs(df['close'].iloc[i] - df['close'].iloc[i-1]) / df['close'].iloc[i-1]
             logging.debug(f"Index: {i}, Price Change: {price_change}, Buffer: {buffer}")
             if price_change > buffer:
-                logging.debug(f"Index: {i}, Indicators: {df.iloc[i]}")
 
                 # Use multiple conditions to determine signals
                 if df['double_top'].iloc[i] or df['head_and_shoulders'].iloc[i] or df['triple_top'].iloc[i]:
@@ -91,42 +97,8 @@ def generate_trade_signal(df, stop_loss_factor, take_profit_factor):
                     df.loc[df.index[i], 'stop_loss'] = df['close'].iloc[i] * (1 + stop_loss_factor)
                     df.loc[df.index[i], 'take_profit_1'] = df['close'].iloc[i] * (1 - take_profit_factor)
                     logging.info(f"Resistance level signal generated at {df.index[i]} with price {df['close'].iloc[i]}")
-
+                    
+    write_to_influx_signals(measurement_name=f"{symbol.lower()}_trade_signals", df= df.iloc[[-1]])
+    initiate_trade(symbol=symbol, data=df.iloc[[-1]], leverage=25, stop_loss_factor= 0.0055,take_profit_factor= 0.015 )
+    
     return df
-
-def process_signals():
-    symbols = {
-        'BTC/USDT': 'xbtusdtm_futures_ohlcv_with_indicators.csv',
-        'ETH/USDT': 'ethusdtm_futures_ohlcv_with_indicators.csv'
-    }
-    stop_loss_factor = 0.0055  # Adjusted to 0.55%
-    take_profit_factor = 0.015  # Adjusted to 1.5%
-
-    while True:
-        for symbol, file_name in symbols.items():
-            logging.info(f"Processing signals for {symbol}")
-            
-            # Read the existing data with indicators
-            data_path = f'./data/{file_name}'
-            df = pd.read_csv(data_path, parse_dates=['timestamp'])
-
-            # Ensure index is in datetime format
-            df.set_index('timestamp', inplace=True)
-            df.index = pd.to_datetime(df.index)
-
-            # Generate trade signals
-            df = generate_trade_signal(df, stop_loss_factor, take_profit_factor)
-
-            # Save signals to a separate file
-            signals = df[df['signal'] != 0]
-            signals_file_path = f'./data/{symbol.replace("/", "_").lower()}_trade_signals.csv'
-            if not os.path.exists(signals_file_path):
-                signals.to_csv(signals_file_path)
-            else:
-                signals.to_csv(signals_file_path, mode='a', header=not os.path.exists(signals_file_path))
-            logging.info(f"Trade signals updated and saved for {symbol}")
-
-        time.sleep(60)  # Wait for a minute before processing new signals
-
-if __name__ == "__main__":
-    process_signals()

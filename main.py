@@ -1,12 +1,8 @@
-from influxdb import InfluxDBClient
+import asyncio
+from data_collection_futures import connect_to_websocket
 
-client = InfluxDBClient(host='localhost', port=8086)
+def initiate_auto_trade():
+    asyncio.run(connect_to_websocket())
 
-
-client.create_database('ohlc')
-
-a = client.get_list_database()
-
-
-
-print(a)
+if __name__ == "__main__":
+    initiate_auto_trade()

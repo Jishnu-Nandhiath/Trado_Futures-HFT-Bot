@@ -9,9 +9,14 @@ services:
     ports:
       - "8086:8086"
 
-  # main:
-  #   build: .
-  #   restart: always
-  #   volumes:
-  #     - .: /app
+  cache:
+    image: redis:latest
+    restart: always
+
+  bot:
+    build: .
+    restart: always
+    volumes:
+      - .:/app
+    command: python main.py
   
