@@ -1,4 +1,4 @@
-# trading-bot
+
 This is an HFT bot for trading on kucoin futures with live data analysis.
 
 Run the program using docker:
